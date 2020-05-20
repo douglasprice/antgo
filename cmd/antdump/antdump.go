@@ -1,22 +1,23 @@
 package main
 
 import (
-"log"
-"github.com/half2me/antgo/driver"
-"github.com/half2me/antgo/message"
 	"flag"
+	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"os/signal"
-	"github.com/gorilla/websocket"
-	"net/url"
-	"fmt"
 	"time"
-	"github.com/half2me/antgo/driver/usb"
+
+	"github.com/gorilla/websocket"
+	"github.com/half2me/antgo/driver"
 	"github.com/half2me/antgo/driver/file"
+	"github.com/half2me/antgo/driver/usb"
+	"github.com/half2me/antgo/message"
 )
 
 func sendToWs(in <-chan message.AntPacket, done chan<- struct{}) {
-	defer func() {done<-struct {}{}}()
+	defer func() { done <- struct{}{} }()
 	u, errp := url.Parse(*wsAddr)
 	if errp != nil {
 		panic(errp.Error())
@@ -29,7 +30,7 @@ func sendToWs(in <-chan message.AntPacket, done chan<- struct{}) {
 
 wsconnect: // Connect to the websocket server
 	if c, _, err = websocket.DefaultDialer.Dial(u.String(), nil); err != nil {
-		if ! *persistent {
+		if !*persistent {
 			log.Fatalln(err.Error())
 		}
 		log.Println(err.Error())
@@ -40,7 +41,7 @@ wsconnect: // Connect to the websocket server
 	// Register as source
 	if err := c.WriteMessage(websocket.TextMessage, []byte("source")); err != nil {
 		c.Close()
-		if ! *persistent {
+		if !*persistent {
 			log.Fatalln(err.Error())
 		}
 		log.Println(err.Error())
@@ -49,20 +50,29 @@ wsconnect: // Connect to the websocket server
 
 	// Setup pingpongs
 	c.SetReadDeadline(time.Now().Add(time.Second * 3))
-	c.SetPongHandler(func(string) error {c.SetReadDeadline(time.Now().Add(time.Second * 3)); return nil})
-	go func(){for {if _, _, err := c.ReadMessage(); err != nil {c.Close(); return}}}()
+	c.SetPongHandler(func(string) error { c.SetReadDeadline(time.Now().Add(time.Second * 3)); return nil })
+	go func() {
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				c.Close()
+				return
+			}
+		}
+	}()
 
 	// Send ANT+ messages or pings
 	log.Println("Connected to ws server!")
 	for {
 		select {
-		case <- ticker.C:
+		case <-ticker.C:
 			c.WriteMessage(websocket.PingMessage, []byte{})
-		case msg, ok := <- in:
-			if !ok {return}
+		case msg, ok := <-in:
+			if !ok {
+				return
+			}
 			if e := c.WriteMessage(websocket.BinaryMessage, msg); e != nil {
 				c.Close()
-				if ! *persistent {
+				if !*persistent {
 					log.Fatalln(e.Error())
 				}
 				log.Println(e.Error())
@@ -85,13 +95,16 @@ func filter(m message.AntPacket) (allow bool) {
 			if message.PowerMessage(msg).DataPageNumber() == 0x10 {
 				allow = true
 			}
+		case message.DEVICE_TYPE_HR:
+			allow = true
 		}
+
 	}
 	return
 }
 
 func loop(in <-chan message.AntPacket, done chan<- struct{}) {
-	defer func() {done<-struct {}{}}()
+	defer func() { done <- struct{}{} }()
 
 	outs := make([]chan message.AntPacket, 0, 2)
 
@@ -100,7 +113,9 @@ func loop(in <-chan message.AntPacket, done chan<- struct{}) {
 	//File
 	if len(*outfile) > 0 {
 		f = file.GetAntCaptureFile(*outfile)
-		if e := f.Open(); e != nil {panic(e.Error())}
+		if e := f.Open(); e != nil {
+			panic(e.Error())
+		}
 		defer f.Close()
 	}
 
@@ -109,15 +124,19 @@ func loop(in <-chan message.AntPacket, done chan<- struct{}) {
 		c := make(chan message.AntPacket)
 		cdone := make(chan struct{})
 		go sendToWs(c, cdone)
-		defer func() {<-cdone}()
+		defer func() { <-cdone }()
 		outs = append(outs, c)
 	}
 
-	defer func() {for _, c := range outs {close(c)}}()
+	defer func() {
+		for _, c := range outs {
+			close(c)
+		}
+	}()
 
 	for m := range in {
 		if filter(m) {
-			if ! *silent {
+			if !*silent {
 				fmt.Println(message.AntBroadcastMessage(m))
 			}
 			for _, c := range outs {
@@ -154,12 +173,14 @@ func main() {
 	antIn := make(chan message.AntPacket)
 	antOut := make(chan message.AntPacket)
 	done := make(chan struct{})
-	defer func() {<-done}()
+	defer func() { <-done }()
 
 	switch *drv {
 	case "usb":
 		device := driver.NewDevice(usb.GetUsbDevice(0x0fcf, *pid), antIn, antOut)
-		if err := device.Start(); err != nil {panic(err.Error())}
+		if err := device.Start(); err != nil {
+			panic(err.Error())
+		}
 		defer device.Stop()
 		device.StartRxScanMode()
 	case "file":
@@ -168,7 +189,7 @@ func main() {
 			panic(e.Error())
 		}
 		go f.ReadLoop(antIn, stopFile)
-		defer func(){stopFile <- struct{}{}}()
+		defer func() { stopFile <- struct{}{} }()
 	default:
 		panic("Unknown driver specified!")
 	}

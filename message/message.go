@@ -1,14 +1,14 @@
 package message
 
 import (
-	"fmt"
-	"encoding/binary"
 	"bytes"
+	"encoding/binary"
+	"fmt"
 )
 
 type AntPacket []byte
 type AntBroadcastMessage AntPacket
-type Rssi struct{
+type Rssi struct {
 	measurementType, rssi, threshold byte
 }
 
@@ -51,7 +51,7 @@ func (p AntPacket) Class() byte {
 }
 
 func (p AntPacket) Data() []byte {
-	return p[3:len(p)-1]
+	return p[3 : len(p)-1]
 }
 
 func (p AntPacket) CalculateChecksum() (chk byte) {
@@ -73,10 +73,14 @@ func (p AntBroadcastMessage) String() string {
 		msg = SpeedAndCadenceMessage(p).String()
 	case DEVICE_TYPE_POWER:
 		msg = PowerMessage(p).String()
+	case DEVICE_TYPE_HR:
+		msg = HeartRateMessage(p).String()
 	default:
-		msg = "["
+		msg = "[UNSUPP "
+		msg += fmt.Sprintf("0x%x", p.DeviceType())
+		msg += "] ["
 		for _, v := range p.Content() {
-			msg += fmt.Sprintf(" %02X ", v)
+			msg += fmt.Sprintf("0x%x", v)
 		}
 		msg += "]"
 	}
@@ -129,7 +133,7 @@ func (p AntBroadcastMessage) RxTimestamp() (ts uint16) {
 }
 
 func makeAntPacket(messageType byte, content []byte) AntPacket {
-	p := make([]byte, len(content) + 4)
+	p := make([]byte, len(content)+4)
 
 	p[0] = MESSAGE_TX_SYNC
 	p[1] = byte(len(content))
